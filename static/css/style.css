@@ -1,0 +1,42 @@
+body {
+  padding-top: 40px;
+}
+.panel {
+  padding: 40px 15px;
+  /* text-align: center; */
+  margin: auto;
+}
+
+.subp_bottom {
+	/* display: block; */
+}
+#description {
+	display: block;
+	padding: 10px;
+}
+.infoDisplay, #info {
+	margin: auto;
+	background-color: #222222;
+	color: #fff;
+	display: inline-flex;
+	
+	text-align: right;
+	padding-left: 35px;
+}
+input, option, select {
+	color: #0063BD;
+}
+#info {
+	text-align: left;
+}
+#info :after {
+	margin-bottom: 25px;
+}
+#googleMap {
+margin: auto;
+height: 60vh;
+width: 50vw;
+}
+form {
+	padding: 5px;
+}
