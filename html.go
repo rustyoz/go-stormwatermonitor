@@ -32,7 +32,7 @@ const body = `
 <div class="infoDisplay">
 <div class="subp_bottom">
 <p id='description'>After selecting your location, click to button below</p>
-<form id="point" action="track" method="GET">
+<form id="point">
 Latitude: <input type="text" id= "lat" class="coordiantes" value="Drag the pin" name="lat"><br>
 Longitude: <input type="text" id="lng" class="coordinates" value="Drag the pin" name="lng"><br>
 <p>What do you put down the storm water drain?</p>
@@ -51,6 +51,7 @@ const header = `
 <meta name="viewport" content="width=device-width, initial-scale=1">
 
 <meta></meta>
+<script src="https://ajax.googleapis.com/ajax/libs/jquery/2.1.3/jquery.min.js"></script>
 <script src="http://maps.googleapis.com/maps/api/js"></script>
 <link href="/static/css/bootstrap.min.css" rel="stylesheet">
 <link href="/static/css/style.css" rel="stylesheet">
@@ -124,6 +125,17 @@ const mapapi = `
 </script>
 `
 
+const stylescript = `
+<script>
+var featureStyle = {
+	strokeColor:"#0063BD",
+	 strokeOpacity:0.8,
+	 strokeWeight:5
+}
+
+</script>
+`
+
 const submitscript = `
 <script>
 // Attach a submit handler to the form
@@ -134,10 +146,10 @@ $( '#point' ).submit(function( event ) {
   event.preventDefault();
 
   var postdata = $form.serialize();
-  var posturl = $form.attr( "action" );
+  var posturl = 'track?' // $form.attr( "action" );
 
-  map.data.loadGeoJSON(posturl + postdata)
-
+  map.data.loadGeoJson(posturl + postdata)
+	map.data.setStyle(featureStyle);
 
 });
 </script>

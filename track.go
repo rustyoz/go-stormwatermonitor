@@ -2,10 +2,11 @@ package main
 
 import (
 	"fmt"
+	"log"
+
 	"github.com/jonas-p/go-shp"
 	"github.com/kellydunn/golang-geo"
 	gj "github.com/kpawlik/geojson"
-	"log"
 )
 
 // Tracker Struct
@@ -85,7 +86,7 @@ func (t *Tracker) generatePointsAndSegments() {
 			}
 			if !found {
 				t.Points = append(t.Points, *geopoint)
-				topointid = len(t.Points)
+				topointid = len(t.Points) - 1
 			}
 
 			//fmt.Println("point: ", n)
@@ -96,7 +97,7 @@ func (t *Tracker) generatePointsAndSegments() {
 				seg := new(Segment)
 				seg.start = &t.Points[frompointid]
 				seg.startid = frompointid
-				seg.end = &t.Points[topointid-1]
+				seg.end = &t.Points[topointid]
 				seg.endid = topointid
 				t.Segments = append(t.Segments, *seg)
 			}
@@ -107,6 +108,12 @@ func (t *Tracker) generatePointsAndSegments() {
 	t.PointCount = len(t.Points)
 	t.SegmentCount = len(t.Segments)
 
+	for n, seg := range t.Segments {
+		fmt.Println(seg)
+		if n > 10 {
+			break
+		}
+	}
 }
 
 func (t *Tracker) createConnectionList() {
@@ -115,22 +122,29 @@ func (t *Tracker) createConnectionList() {
 	// fmt.Println(len(t.Connections))
 	//fmt.Println(t.SegmentCount)
 
-	for j := 0; j < t.SegmentCount; j++ {
-		from := t.Segments[j].startid
-		to := t.Segments[j].endid
+	for _, segment := range t.Segments {
+		from := segment.startid
+		to := segment.endid
 
 		t.Connections[from] = append(t.Connections[from], to)
 		count = count + 1
 	}
 	t.ConnectionCount = count
 	fmt.Println("ConnectionCount = ", t.ConnectionCount)
+
+	for n, con := range t.Connections {
+		fmt.Println(con)
+		if n > 10 {
+			break
+		}
+	}
 	//fmt.Println(t.Connections)
 }
 
 // FindPath return geo.Points of path nearest to input point
 func (t Tracker) FindPath(point int) (path []geo.Point, found bool) {
 	found = false
-
+	path = append(path, t.Points[point])
 	for len(t.Connections[point]) > 0 {
 		path = append(path, t.Points[t.Connections[point][0]])
 		point = t.Connections[point][0]
@@ -167,18 +181,25 @@ func (t *Tracker) FindNearestPoint(input *geo.Point, minimum float64) (int, *geo
 
 // PathToGeoJSON ..
 func (t Tracker) PathToGeoJSON(path []geo.Point) (string, error) {
+	fc := new(gj.FeatureCollection)
 	var f *gj.Feature
-	line := new(gj.MultiLineString)
-	var cordinates gj.Coordinates
+	line := new(gj.LineString)
+	line.Type = `LineString`
+	//var cordinates gj.Coordinates
 
 	for _, p := range path {
 		coord := new(gj.Coordinate)
-		coord[0] = gj.Coord(p.Lat())
-		coord[1] = gj.Coord(p.Lng())
-		cordinates = append(cordinates, *coord)
+		coord[0] = gj.Coord(p.Lng())
+		coord[1] = gj.Coord(p.Lat())
+		line.AddCoordinates(*coord)
+		//cordinates = append(cordinates, *coord)
 	}
-	line.AddCoordinates(cordinates)
+	//line.AddCoordinates(cordinates)
+
+	fmt.Println(line.Type)
 	f = gj.NewFeature(line, nil, nil)
-	geojson, e := gj.Marshal(f)
+	fc.AddFeatures(f)
+	fc.Type = `FeatureCollection`
+	geojson, e := gj.Marshal(fc)
 	return geojson, e
 }

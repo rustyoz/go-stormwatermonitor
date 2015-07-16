@@ -2,11 +2,12 @@ package main
 
 import (
 	"fmt"
-	"github.com/bmizerany/pat"
-	"github.com/kellydunn/golang-geo"
 	"html/template"
 	"net/http"
 	"strconv"
+
+	"github.com/bmizerany/pat"
+	"github.com/kellydunn/golang-geo"
 	//"strings"
 )
 
@@ -25,7 +26,7 @@ func main() {
 	mux := pat.New()
 
 	mux.Get("/", http.HandlerFunc(defaultHandler))
-	mux.Get("/track/", http.HandlerFunc(trackHandler))
+	mux.Get("/track", http.HandlerFunc(trackHandler))
 	mux.Get("/static/", http.StripPrefix("/static/", http.FileServer(http.Dir("static"))))
 	http.Handle("/", mux)
 
@@ -38,9 +39,10 @@ func defaultHandler(w http.ResponseWriter, req *http.Request) {
 
 	templates.ExecuteTemplate(w, "header", nil)
 	fmt.Fprintf(w, "%s", mapapi)
-	fmt.Fprintf(w, "%s", submitscript)
-	templates.ExecuteTemplate(w, "body", nil)
 
+	templates.ExecuteTemplate(w, "body", nil)
+	fmt.Fprintf(w, "%s", stylescript)
+	fmt.Fprintf(w, "%s", submitscript)
 }
 
 func trackHandler(w http.ResponseWriter, req *http.Request) {
