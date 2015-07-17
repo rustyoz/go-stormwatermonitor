@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"github.com/bmizerany/pat"
 	//"github.com/davecheney/profile"
+	"flag"
 	"github.com/kellydunn/golang-geo"
 	"html/template"
 	"net/http"
@@ -21,11 +22,16 @@ func main() {
 	runtime.GOMAXPROCS(runtime.NumCPU())
 	fmt.Println("GOMAXPROCS", runtime.GOMAXPROCS(0))
 
+	dir := flag.String("dir", ".", "data directory")
+	flag.Parse()
+	fmt.Println(*dir)
+	t.OpenFolder(*dir)
+
 	//defer profile.Start(profile.CPUProfile).Stop()
 	//t.Open("small_subset_drains.shp")
 	//t.Open("points.shp")
 	//	t.Open(`council drain pipes.shp`)
-	t.OpenFolder(".")
+
 	templates, _ = template.New("header").Parse(header)
 
 	templates.New("body").Parse(body)
