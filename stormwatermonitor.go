@@ -19,16 +19,23 @@ import (
 var templates *template.Template
 
 var t Tracker
+var log bool
+var dir string
+
+func init() {
+	flag.StringVar(&dir, "dir", "", "data directory")
+	flag.BoolVar(&log, "log", false, "enable http request logging")
+
+}
 
 func main() {
 	runtime.GOMAXPROCS(runtime.NumCPU())
 	fmt.Println("GOMAXPROCS", runtime.GOMAXPROCS(0))
 
-	dir := flag.String("dir", "", "data directory")
 	flag.Parse()
-	fmt.Println(*dir)
-
-	err := t.OpenFolder(*dir)
+	fmt.Println(dir)
+	fmt.Println("logging: ", log)
+	err := t.OpenFolder(dir)
 	if err != nil {
 		fmt.Println(err)
 		return
@@ -52,12 +59,17 @@ func main() {
 
 	//fmt.Println(t.FindPathID(0))
 	fmt.Println(`http.ListenAndServe(":8000", nil)`)
-	http.ListenAndServe(":8000", nil)
+
+	if log {
+		http.ListenAndServe(":8000", Log(http.DefaultServeMux))
+	} else {
+		http.ListenAndServe(":8000", nil)
+	}
 
 }
 
 func defaultHandler(w http.ResponseWriter, req *http.Request) {
-
+	fmt.Println(req.URL)
 	templates.ExecuteTemplate(w, "header", nil)
 	fmt.Fprintf(w, "%s", mapapi)
 
@@ -104,4 +116,11 @@ func trackHandler(w http.ResponseWriter, req *http.Request) {
 
 	handletime := time.Since(start)
 	fmt.Println("Handled in: ", handletime)
+}
+
+func Log(handler http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		fmt.Println(r.URL)
+		handler.ServeHTTP(w, r)
+	})
 }
