@@ -6,7 +6,7 @@ import (
 	"github.com/kellydunn/golang-geo"
 	gj "github.com/kpawlik/geojson"
 	"io/ioutil"
-	"log"
+	//	"log"
 	"path/filepath"
 	"runtime"
 	"sync"
@@ -60,7 +60,8 @@ func (t *Tracker) Open(file string) {
 
 	shape, err := shp.Open(file)
 	if err != nil {
-		log.Fatal(err)
+		fmt.Println(err)
+		return
 	}
 
 	for shape.Next() {
