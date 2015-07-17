@@ -9,6 +9,7 @@ import (
 	"html/template"
 	"net/http"
 
+	"github.com/GeertJohan/go.rice"
 	"runtime"
 	"strconv"
 	"time"
@@ -46,7 +47,7 @@ func main() {
 
 	mux.Get("/", http.HandlerFunc(defaultHandler))
 	mux.Get("/track", http.HandlerFunc(trackHandler))
-	mux.Get("/static/", http.StripPrefix("/static/", http.FileServer(http.Dir("static"))))
+	mux.Get("/static/", http.StripPrefix("/static/", http.FileServer(rice.MustFindBox("static").HTTPBox())))
 	http.Handle("/", mux)
 
 	//fmt.Println(t.FindPathID(0))
