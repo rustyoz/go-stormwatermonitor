@@ -8,6 +8,7 @@ import (
 	"github.com/kellydunn/golang-geo"
 	"html/template"
 	"net/http"
+
 	"runtime"
 	"strconv"
 	"time"
@@ -22,10 +23,15 @@ func main() {
 	runtime.GOMAXPROCS(runtime.NumCPU())
 	fmt.Println("GOMAXPROCS", runtime.GOMAXPROCS(0))
 
-	dir := flag.String("dir", ".", "data directory")
+	dir := flag.String("dir", "", "data directory")
 	flag.Parse()
 	fmt.Println(*dir)
-	t.OpenFolder(*dir)
+
+	err := t.OpenFolder(*dir)
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
 
 	//defer profile.Start(profile.CPUProfile).Stop()
 	//t.Open("small_subset_drains.shp")

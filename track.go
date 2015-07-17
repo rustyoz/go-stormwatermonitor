@@ -36,15 +36,19 @@ type Segment struct {
 
 // OpenFolder open folder of shapefiles
 func (t *Tracker) OpenFolder(folder string) (err error) {
+	if len(folder) < 1 {
+		return fmt.Errorf("No folder specified")
+	}
 	files, err := ioutil.ReadDir(folder)
 	if err != nil {
-		return fmt.Errorf("Opening Folder Failed")
+		return fmt.Errorf("Opening Folder Failed:, %s ", folder)
 	}
-
+	fmt.Println("Opened Folder: folder", folder)
 	for _, file := range files {
 		if !file.IsDir() && filepath.Ext(file.Name()) == ".shp" {
+			path := filepath.Join(folder, file.Name())
 			fmt.Println("reading: ", file.Name())
-			t.Open(file.Name())
+			t.Open(path)
 
 		}
 	}
