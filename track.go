@@ -2,11 +2,15 @@ package main
 
 import (
 	"fmt"
-	"log"
-
 	"github.com/jonas-p/go-shp"
 	"github.com/kellydunn/golang-geo"
 	gj "github.com/kpawlik/geojson"
+	"io/ioutil"
+	"log"
+	"path/filepath"
+	"runtime"
+	"sync"
+	//"time"
 )
 
 // Tracker Struct
@@ -27,6 +31,25 @@ type Segment struct {
 	startid int
 	end     *geo.Point
 	endid   int
+	pipeid  int
+}
+
+// OpenFolder open folder of shapefiles
+func (t *Tracker) OpenFolder(folder string) (err error) {
+	files, err := ioutil.ReadDir(folder)
+	if err != nil {
+		return fmt.Errorf("Opening Folder Failed")
+	}
+
+	for _, file := range files {
+		if !file.IsDir() && filepath.Ext(file.Name()) == ".shp" {
+			fmt.Println("reading: ", file.Name())
+			t.Open(file.Name())
+
+		}
+	}
+
+	return err
 }
 
 //Open Shape File
@@ -56,37 +79,106 @@ func (t *Tracker) Open(file string) {
 	fmt.Println("point count after gen: ", len(t.Points))
 	fmt.Println("t.createConnectionList()")
 	t.createConnectionList()
-	for _, c := range t.Connections {
+
+	/*for _, c := range t.Connections {
 		if len(c) > 1 {
 			fmt.Println(c)
 		}
+	}*/
+}
+
+// findExisting, given a point try to find existing points concurrently
+func (t *Tracker) findExisting(newpoint geo.Point) (exists bool, id int) {
+	numpoints := len(t.Points)
+
+	var NCPU int
+	NCPU = runtime.NumCPU()
+
+	found := make(chan int, 4)
+	quit := make(chan bool, 1)
+
+	if numpoints < 100 {
+		for existingpointid, existingpoint := range t.Points {
+			if newpoint.Lat() == existingpoint.Lat() && newpoint.Lng() == existingpoint.Lng() {
+				return true, existingpointid
+			}
+
+		}
+		return false, 0
+	}
+	//	fmt.Println("start parrallel")
+	var wg sync.WaitGroup
+	wg.Add(NCPU)
+	for i := 0; i < NCPU; i++ {
+		start := i * numpoints / NCPU
+		end := (i + 1) * numpoints / NCPU
+
+		go findExistingRoutine(newpoint, t.Points[start:end], start, found, quit, i, &wg)
+	}
+	wg.Wait()
+
+	var f bool
+TestFound:
+	select {
+	case id = <-found:
+		//fmt.Println(id)
+		f = true
+	default:
+		//fmt.Println("found nothing")
+		break TestFound
+	}
+
+	return f, id
+
+}
+
+func findExistingRoutine(newpoint geo.Point, points []geo.Point, offset int, found chan int, quit chan bool, goroutineid int, wg *sync.WaitGroup) {
+
+	defer wg.Done()
+	//	defer fmt.Println("Goroutine exit: ", goroutineid)
+	select {
+	case <-quit:
+		//	fmt.Println("goroutine quit ", goroutineid)
+		return
+	default:
+		for existingpointid, existingpoint := range points {
+			if newpoint.Lat() == existingpoint.Lat() && newpoint.Lng() == existingpoint.Lng() {
+				found <- existingpointid + offset
+				//	fmt.Println("goroutine done found : ", existingpointid+offset)
+				quit <- true
+				return
+			}
+		}
+		//	fmt.Println("goroutine found nothing: ", goroutineid)
+		return
 	}
 }
 
 func (t *Tracker) generatePointsAndSegments() {
 	var frompointid int
 	var topointid int
-
-	for _, pipe := range t.Pipes {
+	var pointcount int
+	for pipeid, pipe := range t.Pipes {
+		/*fmt.Println("len(pipe.Points): ", len(pipe.Points))
+		fmt.Println("pipe.Numparts ", pipe.NumPoints) */
 
 		//for each pipe i.e PolyLine
+		found := false
+		var existingpointid int
 		for n, point := range pipe.Points {
+			//	start := time.Now()
+
+			//fmt.Println("n: ", n)
 			//create new geo.Point
 			geopoint := geo.NewPoint(point.Y, point.X)
 
-			//see if the point already exists
-			var found bool
-			found = false
-			for existingpointid, existingpoint := range t.Points {
-				if geopoint.Lat() == existingpoint.Lat() && geopoint.Lng() == existingpoint.Lat() {
-					topointid = existingpointid
+			found, existingpointid = t.findExisting(*geopoint)
 
-					found = true
-				}
-			}
 			if !found {
 				t.Points = append(t.Points, *geopoint)
 				topointid = len(t.Points) - 1
+			} else {
+				topointid = existingpointid
 			}
 
 			//fmt.Println("point: ", n)
@@ -99,21 +191,20 @@ func (t *Tracker) generatePointsAndSegments() {
 				seg.startid = frompointid
 				seg.end = &t.Points[topointid]
 				seg.endid = topointid
+				seg.pipeid = pipeid
 				t.Segments = append(t.Segments, *seg)
+				//	fmt.Println(seg)
 			}
 
 			frompointid = topointid
+			pointcount = pointcount + 1
+			//	end := time.Since(start)
+			//fmt.Println(end)
 		}
+
 	}
 	t.PointCount = len(t.Points)
 	t.SegmentCount = len(t.Segments)
-
-	for n, seg := range t.Segments {
-		fmt.Println(seg)
-		if n > 10 {
-			break
-		}
-	}
 }
 
 func (t *Tracker) createConnectionList() {
@@ -132,12 +223,12 @@ func (t *Tracker) createConnectionList() {
 	t.ConnectionCount = count
 	fmt.Println("ConnectionCount = ", t.ConnectionCount)
 
-	for n, con := range t.Connections {
+	/*for n, con := range t.Connections {
 		fmt.Println(con)
 		if n > 10 {
 			break
 		}
-	}
+	}*/
 	//fmt.Println(t.Connections)
 }
 
@@ -153,11 +244,30 @@ func (t Tracker) FindPath(point int) (path []geo.Point, found bool) {
 	return path, found
 }
 
-// FindNearestPoint
-// input *geo.Point
-// minimum float64: exclude points closer than this distance
-//returns id, *geo.Point, distance to point
+// PathToPoints convert path denoted for id numbers to geo.Point's
+func (t Tracker) PathToPoints(path []int) (points []geo.Point) {
+	for _, p := range path {
+		points = append(points, t.Points[p])
+	}
+	return points
+}
 
+// FindPathID returns point id of path nearest to input point
+func (t Tracker) FindPathID(point int) (path []int, found bool) {
+	found = false
+	path = append(path, point)
+	for len(t.Connections[point]) > 0 {
+		path = append(path, t.Connections[point][0])
+		point = t.Connections[point][0]
+		found = true
+	}
+	return path, found
+}
+
+// FindNearestPoint finds the nearest point given a mimimum radius.
+// input *geo.Point.
+// minimum float64: exclude points closer than this distance.
+// returns id, *geo.Point, distance to point.
 func (t *Tracker) FindNearestPoint(input *geo.Point, minimum float64) (int, *geo.Point, float64) {
 	//fmt.Println("in FindNearestPoint")
 
