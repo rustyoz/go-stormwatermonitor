@@ -9,7 +9,9 @@ import (
 	"html/template"
 	"net/http"
 
+	"encoding/gob"
 	"github.com/GeertJohan/go.rice"
+	"os"
 	"runtime"
 	"strconv"
 	"time"
@@ -19,13 +21,16 @@ import (
 var templates *template.Template
 
 var t Tracker
-var log bool
+var logging bool
 var dir string
+var radius int
+var data string
 
 func init() {
 	flag.StringVar(&dir, "dir", "", "data directory")
-	flag.BoolVar(&log, "log", false, "enable http request logging")
-
+	flag.BoolVar(&logging, "log", false, "enable http request logging")
+	flag.IntVar(&radius, "join", 0, "join radius in meters")
+	flag.StringVar(&data, "data", "", "filename of preprocessed data file")
 }
 
 func main() {
@@ -33,14 +38,49 @@ func main() {
 	fmt.Println("GOMAXPROCS", runtime.GOMAXPROCS(0))
 
 	flag.Parse()
-	fmt.Println(dir)
-	fmt.Println("logging: ", log)
-	err := t.OpenFolder(dir)
-	if err != nil {
-		fmt.Println(err)
-		return
+	t.JoinRadius = radius
+	fmt.Println("Reading Folder: ", dir)
+	if logging {
+		fmt.Println("HTTP request logging enabled")
+	}
+	if radius > 0 {
+		fmt.Println("Joining points closer than: ", radius, " meters")
 	}
 
+	if len(data) > 4 {
+		datafile, err := os.Open(data)
+		if err != nil {
+			fmt.Println(err)
+			return
+		}
+		decoder := gob.NewDecoder(datafile)
+		err = decoder.Decode(&t)
+		datafile.Close()
+		if err != nil {
+			fmt.Println(err)
+			return
+		}
+	} else {
+		err := t.OpenFolder(dir, radius)
+		if err != nil {
+			fmt.Println(err)
+			return
+		}
+		datafile, err := os.Create("tracker.gob")
+		if err != nil {
+			fmt.Println(err)
+			fmt.Println("Failed to create tracker.gob")
+			return
+		}
+
+		encoder := gob.NewEncoder(datafile)
+		err = encoder.Encode(t)
+		if err != nil {
+			fmt.Println(err)
+			fmt.Println("Failed to encoder data to tracker.gob")
+		}
+		datafile.Close()
+	}
 	//defer profile.Start(profile.CPUProfile).Stop()
 	//t.Open("small_subset_drains.shp")
 	//t.Open("points.shp")
@@ -60,8 +100,8 @@ func main() {
 	//fmt.Println(t.FindPathID(0))
 	fmt.Println(`http.ListenAndServe(":8000", nil)`)
 
-	if log {
-		http.ListenAndServe(":8000", Log(http.DefaultServeMux))
+	if logging {
+		http.ListenAndServe(":8000", log(http.DefaultServeMux))
 	} else {
 		http.ListenAndServe(":8000", nil)
 	}
@@ -103,14 +143,17 @@ func trackHandler(w http.ResponseWriter, req *http.Request) {
 		nearestid, nearest, distance = t.FindNearestPoint(point, distance)
 		fmt.Println(nearestid)
 		fmt.Println(nearest)
-		path, foundpath = t.FindPathID(nearestid)
+		path, foundpath = t.FindPathIDRecursive(nearestid, path, 0, 0)
 	}
+	fmt.Println(path[len(path)-1])
+	fmt.Println(t.Points[path[len(path)-1]])
 	/*if foundpath == true {
 		fmt.Println(path)
 	} else {
 		fmt.Println("No path found")
 	} */
-	points := t.PathToPoints(path)
+	fmt.Println(path)
+	points := t.IDsToPoints(path)
 	geojson, err := t.PathToGeoJSON(points)
 	fmt.Fprintf(w, "%s", geojson) // returns geojson to client
 
@@ -118,7 +161,7 @@ func trackHandler(w http.ResponseWriter, req *http.Request) {
 	fmt.Println("Handled in: ", handletime)
 }
 
-func Log(handler http.Handler) http.Handler {
+func log(handler http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		fmt.Println(r.URL)
 		handler.ServeHTTP(w, r)
