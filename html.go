@@ -148,6 +148,10 @@ $( '#point' ).submit(function( event ) {
   var postdata = $form.serialize();
   var posturl = 'track?' // $form.attr( "action" );
 
+	map.data.forEach(function(feature) {
+        //If you want, check here for some constraints.
+        map.data.remove(feature);
+    });
   map.data.loadGeoJson(posturl + postdata)
 	map.data.setStyle(featureStyle);
 

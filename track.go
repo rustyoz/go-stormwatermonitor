@@ -142,7 +142,7 @@ func findExistingRoutine(newpoint geo.Point, points []geo.Point, radius int, off
 			case <-quit:
 				return
 			default:
-				if newpoint.Lat == existingpoint.Lat && newpoint.Lng == existingpoint.Lng {
+				if newpoint.Lat() == existingpoint.Lat() && newpoint.Lng() == existingpoint.Lng() {
 					found <- existingpointid + offset
 					//	fmt.Println("goroutine done found : ", existingpointid+offset)
 					quit <- true
@@ -229,6 +229,15 @@ func (t *Tracker) createConnectionList() {
 		t.Connections[from] = append(t.Connections[from], to)
 		count = count + 1
 	}
+
+	var ends int
+	for _, c := range t.Connections {
+		if len(c) == 0 {
+			ends = ends + 1
+		}
+	}
+	fmt.Println("Pipe ends: ", ends)
+
 	fmt.Println("ConnectionCount: ", len(t.Connections))
 
 	fmt.Println("Connection creation took: ", time.Since(start))
@@ -254,69 +263,61 @@ func (t Tracker) IDsToPoints(path []int) (points []geo.Point) {
 	return points
 }
 
+func SelectFromSliceByIndex(indexes []int, slice []int) (result []int) {
+	for _, i := range indexes {
+		result = append(result, slice[i])
+	}
+	return result
+}
+
 // FindPathID returns point id of path nearest to input point
-func (t Tracker) FindPathID(point int) (morepath []int, found bool) {
-	found = false
-	morepath = append(morepath, point)
-	for len(t.Connections[point]) > 0 {
-		morepath = append(morepath, t.Connections[point][0])
-		point = t.Connections[point][0]
-		found = true
+func (t Tracker) FindPathID(start int) (morepath []int) {
+	fmt.Println("in FindPathID")
+	fmt.Println("start = ", start)
+	fmt.Println(len(t.Connections[start]))
+	for len(t.Connections[start]) > 0 {
+		morepath = append(morepath, t.Connections[start][0])
+		start = t.Connections[start][0]
 	}
 
 	return
 }
 
-func (t Tracker) FindPathIDRecursive(point int, path []int, recurse int, joins int) (biggerpath []int, found bool) {
-	if recurse == 5 {
+func (t Tracker) FindPathIDRecursive(path []int, recurse int, joins int) (biggerpath []int, found bool) {
+	fmt.Println("Recursion: ", recurse)
+	if recurse == 15 {
 		fmt.Println("recursion limit")
 		return path, true
 	}
-	var newpath []int
-	var newfound bool
-	var fn bool
-	if len(path) > 0 {
-		end := path[len(path)-1]
-		fmt.Println("finding nearest point to end")
-		ids := findAllPointsWithin(&t.Points[end], t.Points, float64(t.JoinRadius)/1000.0)
-		fmt.Println("path", path)
-		fmt.Println("findAllPointsWithin", ids)
-		ids = findPointsIDSNotIn(ids, path)
-		fmt.Println("subtraction", ids)
-		end, _, _, fn = findNearestPointWithin(&t.Points[end], t.IDsToPoints(ids), 0, float64(t.JoinRadius)/1000.0)
-		if fn {
-			newpath, _ = t.FindPathID(end)
-		} else {
-			return path, true
-		}
-	} else {
-		newpath, newfound = t.FindPathID(point)
-		if !newfound {
-			return path, false
-		}
+
+	fmt.Println("Start: ", path[0])
+	end := path[len(path)-1]
+	fmt.Println("End: ", end)
+
+	endgeo := t.Points[end]
+	ids := FindAllStartPointsWithin(&endgeo, t.Points, float64(t.JoinRadius)/1000.0, &t) // find all start points within the join radius of the end of the path
+	fmt.Println("Start points near end\n", ids)
+	ids = findPointsIDSNotIn(ids, path)
+	fmt.Println("Start points near end not already in the path\n", ids)
+	if len(ids) > 0 {
+		newstart, _, _, _ := findNearestPointWithin(&endgeo, t.IDsToPoints(ids), 0, float64(t.JoinRadius)/1000.0)
+		fmt.Println("Nearest start points not in path: ", ids[newstart])
+		joinedpath := append(path, ids[newstart])
+		morepath := t.FindPathID(ids[newstart])
+		joinedpath = append(joinedpath, morepath...)
+		fmt.Println(joinedpath)
+		return t.FindPathIDRecursive(joinedpath, recurse+1, joins+1)
 	}
 
-	biggerpath = path
-	found = true
-	for _, id1 := range newpath {
-		for _, id2 := range path {
-			if id1 == id2 {
-				fmt.Println("Recursion: ", recurse)
-				fmt.Println("Path loop")
-				fmt.Println("joins: ", joins)
-				return
-			}
-		}
-	}
-	biggerpath = append(path, newpath...)
-	return t.FindPathIDRecursive(point, biggerpath, recurse+1, joins+1)
+	return path, true
+
 }
 
 // FindNearestPoint finds the nearest point given a mimimum radius.
 // input *geo.Point.
 // minimum float64: exclude points closer than this distance.
 // returns id, *geo.Point, distance to point.
-func (t *Tracker) FindNearestPoint(input *geo.Point, minimum float64) (int, *geo.Point, float64) {
+func (t *Tracker) FindNearestStartPoint(input *geo.Point, minimum float64) (int, *geo.Point, float64) {
 	//fmt.Println("in FindNearestPoint")
 
 	var closestdistance float64
@@ -325,7 +326,7 @@ func (t *Tracker) FindNearestPoint(input *geo.Point, minimum float64) (int, *geo
 	closestdistance = 7000000
 	for id, point := range t.Points {
 		distance := input.GreatCircleDistance(&point)
-		if distance < closestdistance && distance > minimum {
+		if distance < closestdistance && distance > minimum && len(t.Connections[id]) > 0 {
 			closestdistance = distance
 			nearestpoint = &point
 			nearestpointid = id
@@ -340,7 +341,7 @@ func (t *Tracker) FindNearestPoint(input *geo.Point, minimum float64) (int, *geo
 func findNearestPointWithin(input *geo.Point, points []geo.Point, minimum float64, maximum float64) (nearestpointid int, nearestpoint *geo.Point, distance float64, found bool) {
 	for id, point := range points {
 		distance = input.GreatCircleDistance(&point)
-		if distance <= maximum && distance > minimum {
+		if distance <= maximum && distance > minimum && len(t.Connections[id]) > 0 {
 			maximum = distance
 			nearestpoint = &point
 			nearestpointid = id
@@ -353,7 +354,7 @@ func findNearestPointWithin(input *geo.Point, points []geo.Point, minimum float6
 	return nearestpointid, nearestpoint, distance, found
 }
 
-func findAllPointsWithin(input *geo.Point, points []geo.Point, maximum float64) (ids []int) {
+func FindAllPointsWithin(input *geo.Point, points []geo.Point, maximum float64) (ids []int) {
 	for id, point := range points {
 		distance := input.GreatCircleDistance(&point)
 		if distance <= maximum {
@@ -363,12 +364,22 @@ func findAllPointsWithin(input *geo.Point, points []geo.Point, maximum float64) 
 	return ids
 }
 
+func FindAllStartPointsWithin(input *geo.Point, points []geo.Point, maximum float64, t *Tracker) (ids []int) {
+	for id, point := range points {
+		distance := input.GreatCircleDistance(&point)
+		if distance <= maximum && len(t.Connections[id]) > 0 {
+			ids = append(ids, id)
+		}
+	}
+	return ids
+}
+
 func findPointsIDSNotIn(set []int, subtract []int) (ids []int) {
 	// for each point in the set
-	for p1 := range set {
+	for _, p1 := range set {
 		var found bool
 		// detect if point exists in the subtraction set
-		for p2 := range subtract {
+		for _, p2 := range subtract {
 			if p1 == p2 {
 				found = true
 			}
@@ -384,6 +395,16 @@ func findPointsIDSNotIn(set []int, subtract []int) (ids []int) {
 // PathToGeoJSON ..
 func (t Tracker) PathToGeoJSON(path []geo.Point) (string, error) {
 	fc := new(gj.FeatureCollection)
+	// Start marker
+	var p *gj.Feature
+	start := new(gj.Point)
+	start.Type = `Point`
+	c := new(gj.Coordinate)
+	c[0] = gj.Coord(path[0].Lng)
+	c[1] = gj.Coord(path[0].Lat)
+	start.Coordinates = *c
+
+	// Path line
 	var f *gj.Feature
 	line := new(gj.LineString)
 	line.Type = `LineString`
@@ -400,7 +421,9 @@ func (t Tracker) PathToGeoJSON(path []geo.Point) (string, error) {
 
 	fmt.Println(line.Type)
 	f = gj.NewFeature(line, nil, nil)
-	fc.AddFeatures(f)
+	p = gj.NewFeature(start, nil, nil)
+	fc.AddFeatures(f, p)
+
 	fc.Type = `FeatureCollection`
 	geojson, e := gj.Marshal(fc)
 	return geojson, e

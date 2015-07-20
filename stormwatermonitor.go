@@ -99,6 +99,7 @@ func main() {
 
 	//fmt.Println(t.FindPathID(0))
 	fmt.Println(`http.ListenAndServe(":8000", nil)`)
+	go Console()
 
 	if logging {
 		http.ListenAndServe(":8000", log(http.DefaultServeMux))
@@ -135,24 +136,30 @@ func trackHandler(w http.ResponseWriter, req *http.Request) {
 	point := geo.NewPoint(lat, lng)
 	var distance float64
 	distance = 0
-	var foundpath bool
+
 	var path []int
 	var nearestid int
 	var nearest *geo.Point
-	for foundpath == false {
-		nearestid, nearest, distance = t.FindNearestPoint(point, distance)
-		fmt.Println(nearestid)
-		fmt.Println(nearest)
-		path, foundpath = t.FindPathIDRecursive(nearestid, path, 0, 0)
-	}
-	fmt.Println(path[len(path)-1])
-	fmt.Println(t.Points[path[len(path)-1]])
+	nearpoints := FindAllStartPointsWithin(point, t.Points, float64(t.JoinRadius)/1000.0, &t)
+	fmt.Println("Start Points within ", t.JoinRadius)
+	fmt.Println(nearpoints)
+
+	nearestid, nearest, distance = t.FindNearestStartPoint(point, distance)
+	path = append(path, nearestid)
+	path = append(path, t.FindPathID(nearestid)...)
+	fmt.Println(nearestid)
+	fmt.Println(nearest)
+	path, _ = t.FindPathIDRecursive(path, 0, 0)
+
+	//fmt.Println(path[len(path)-1])
+	//fmt.Println(t.Points[path[len(path)-1]])
 	/*if foundpath == true {
 		fmt.Println(path)
 	} else {
 		fmt.Println("No path found")
 	} */
 	fmt.Println(path)
+
 	points := t.IDsToPoints(path)
 	geojson, err := t.PathToGeoJSON(points)
 	fmt.Fprintf(w, "%s", geojson) // returns geojson to client
