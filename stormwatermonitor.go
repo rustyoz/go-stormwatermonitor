@@ -25,12 +25,14 @@ var logging bool
 var dir string
 var radius int
 var data string
+var console bool
 
 func init() {
 	flag.StringVar(&dir, "dir", "", "data directory")
 	flag.BoolVar(&logging, "log", false, "enable http request logging")
 	flag.IntVar(&radius, "join", 0, "join radius in meters")
 	flag.StringVar(&data, "data", "", "filename of preprocessed data file")
+	flag.BoolVar(&console, "console", false, "enable console")
 }
 
 func main() {
@@ -99,7 +101,11 @@ func main() {
 
 	//fmt.Println(t.FindPathID(0))
 	fmt.Println(`http.ListenAndServe(":8000", nil)`)
-	go Console()
+
+	if console {
+		fmt.Println("Console Enabled")
+		go Console()
+	}
 
 	if logging {
 		http.ListenAndServe(":8000", log(http.DefaultServeMux))
