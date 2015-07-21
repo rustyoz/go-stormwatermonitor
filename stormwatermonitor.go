@@ -5,7 +5,7 @@ import (
 	"github.com/bmizerany/pat"
 	//"github.com/davecheney/profile"
 	"flag"
-	"github.com/kellydunn/golang-geo"
+	"github.com/rustyoz/golang-geo"
 	"html/template"
 	"net/http"
 

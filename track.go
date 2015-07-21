@@ -3,8 +3,8 @@ package main
 import (
 	"fmt"
 	"github.com/jonas-p/go-shp"
-	"github.com/kellydunn/golang-geo"
 	gj "github.com/kpawlik/geojson"
+	"github.com/rustyoz/golang-geo"
 	"io/ioutil"
 	//	"log"
 	"path/filepath"
@@ -142,7 +142,7 @@ func findExistingRoutine(newpoint geo.Point, points []geo.Point, radius int, off
 			case <-quit:
 				return
 			default:
-				if newpoint.Lat() == existingpoint.Lat() && newpoint.Lng() == existingpoint.Lng() {
+				if newpoint.Lat == existingpoint.Lat && newpoint.Lng == existingpoint.Lng {
 					found <- existingpointid + offset
 					//	fmt.Println("goroutine done found : ", existingpointid+offset)
 					quit <- true
@@ -170,6 +170,7 @@ func findExistingRoutine(newpoint geo.Point, points []geo.Point, radius int, off
 
 func (t *Tracker) generatePointsAndSegments() {
 	start := time.Now()
+	pointtime := time.Second
 	var frompointid int
 	var topointid int
 	for pipeid, pipe := range t.Pipes {
@@ -179,7 +180,7 @@ func (t *Tracker) generatePointsAndSegments() {
 		var existingpointid int
 		end := pipe.NumPoints - 1
 		for n, point := range pipe.Points {
-
+			pointstart := time.Now()
 			//create new geo.Point
 			geopoint := geo.NewPoint(point.Y, point.X)
 
@@ -207,6 +208,10 @@ func (t *Tracker) generatePointsAndSegments() {
 
 			frompointid = topointid
 
+			if time.Since(pointstart) > pointtime {
+				fmt.Println(pointtime)
+				pointtime = pointtime * 10
+			}
 		}
 
 	}
