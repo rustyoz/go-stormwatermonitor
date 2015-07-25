@@ -1,21 +1,21 @@
 package main
 
 import (
-	"fmt"
-	"github.com/bmizerany/pat"
-	//"github.com/davecheney/profile"
-	"flag"
-	"github.com/rustyoz/golang-geo"
-	"html/template"
-	"net/http"
-
 	"encoding/gob"
-	"github.com/GeertJohan/go.rice"
+	"flag"
+	"fmt"
+	"html/template"
+	"log"
+	"net/http"
 	"os"
+	"path/filepath"
 	"runtime"
 	"strconv"
 	"time"
-	//"strings"
+
+	"github.com/GeertJohan/go.rice"
+	"github.com/bmizerany/pat"
+	geo "github.com/rustyoz/golang-geo"
 )
 
 var templates *template.Template
@@ -26,6 +26,9 @@ var dir string
 var radius int
 var data string
 var console bool
+var maxproc int
+
+var siteConfig SiteConfig
 
 func init() {
 	flag.StringVar(&dir, "dir", "", "data directory")
@@ -33,13 +36,14 @@ func init() {
 	flag.IntVar(&radius, "join", 0, "join radius in meters")
 	flag.StringVar(&data, "data", "", "filename of preprocessed data file")
 	flag.BoolVar(&console, "console", false, "enable console")
+	flag.IntVar(&maxproc, "maxproc", runtime.NumCPU(), "set maximum processors")
+	flag.StringVar(&siteConfig.BaseUrl, "baseurl", "", "Set base url of server")
 }
 
 func main() {
-	runtime.GOMAXPROCS(runtime.NumCPU())
-	fmt.Println("GOMAXPROCS", runtime.GOMAXPROCS(0))
-
 	flag.Parse()
+	fmt.Println("GOMAXPROCS", maxproc)
+	runtime.GOMAXPROCS(maxproc)
 	t.JoinRadius = radius
 	fmt.Println("Reading Folder: ", dir)
 	if logging {
@@ -49,19 +53,16 @@ func main() {
 		fmt.Println("Joining points closer than: ", radius, " meters")
 	}
 
-	if len(data) > 4 {
+	if filepath.Ext(data) == ".gob" {
 		datafile, err := os.Open(data)
 		if err != nil {
 			fmt.Println(err)
 			return
 		}
 		decoder := gob.NewDecoder(datafile)
-		err = decoder.Decode(&t)
+		decoder.Decode(&t)
 		datafile.Close()
-		if err != nil {
-			fmt.Println(err)
-			return
-		}
+
 	} else {
 		err := t.OpenFolder(dir, radius)
 		if err != nil {
@@ -79,11 +80,11 @@ func main() {
 		err = encoder.Encode(t)
 		if err != nil {
 			fmt.Println(err)
-			fmt.Println("Failed to encoder data to tracker.gob")
+			fmt.Println("Failed to encode data to tracker.gob")
 		}
 		datafile.Close()
 	}
-	//defer profile.Start(profile.CPUProfile).Stop()
+
 	//t.Open("small_subset_drains.shp")
 	//t.Open("points.shp")
 	//	t.Open(`council drain pipes.shp`)
@@ -94,9 +95,10 @@ func main() {
 
 	mux := pat.New()
 
-	mux.Get("/", http.HandlerFunc(defaultHandler))
-	mux.Get("/track", http.HandlerFunc(trackHandler))
-	mux.Get("/static/", http.StripPrefix("/static/", http.FileServer(rice.MustFindBox("static").HTTPBox())))
+	mux.Get(siteConfig.BaseUrl+"/static/", http.StripPrefix(siteConfig.BaseUrl+"/static/", http.FileServer(rice.MustFindBox("static").HTTPBox())))
+	mux.Get(siteConfig.BaseUrl+"/track", http.HandlerFunc(trackHandler))
+	mux.Get(siteConfig.BaseUrl+"/", http.HandlerFunc(defaultHandler))
+
 	http.Handle("/", mux)
 
 	//fmt.Println(t.FindPathID(0))
@@ -108,7 +110,7 @@ func main() {
 	}
 
 	if logging {
-		http.ListenAndServe(":8000", log(http.DefaultServeMux))
+		log.Fatal(http.ListenAndServe(":8000", LogRequest(http.DefaultServeMux)))
 	} else {
 		http.ListenAndServe(":8000", nil)
 	}
@@ -117,10 +119,10 @@ func main() {
 
 func defaultHandler(w http.ResponseWriter, req *http.Request) {
 	fmt.Println(req.URL)
-	templates.ExecuteTemplate(w, "header", nil)
+	templates.ExecuteTemplate(w, "header", siteConfig)
 	fmt.Fprintf(w, "%s", mapapi)
 
-	templates.ExecuteTemplate(w, "body", nil)
+	templates.ExecuteTemplate(w, "body", siteConfig)
 	fmt.Fprintf(w, "%s", stylescript)
 	fmt.Fprintf(w, "%s", submitscript)
 }
@@ -174,9 +176,13 @@ func trackHandler(w http.ResponseWriter, req *http.Request) {
 	fmt.Println("Handled in: ", handletime)
 }
 
-func log(handler http.Handler) http.Handler {
+func LogRequest(handler http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		fmt.Println(r.URL)
+		log.Println(r.URL)
 		handler.ServeHTTP(w, r)
 	})
+}
+
+type SiteConfig struct {
+	BaseUrl string
 }

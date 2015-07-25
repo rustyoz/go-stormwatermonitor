@@ -2,26 +2,26 @@ package main
 
 import (
 	"fmt"
-	"github.com/jonas-p/go-shp"
-	gj "github.com/kpawlik/geojson"
-	"github.com/rustyoz/golang-geo"
 	"io/ioutil"
-	//	"log"
 	"path/filepath"
-	"runtime"
 	"sync"
 	"time"
-	//"time"
+
+	gj "github.com/rustyoz/geojson"
+	"github.com/rustyoz/golang-geo"
 )
 
 // Tracker Struct
 type Tracker struct {
-	Pipes       []shp.PolyLine
 	Points      []geo.Point
 	Segments    []Segment
 	Connections [][]int
 	PipeCount   int
 	JoinRadius  int
+
+	PointMap map[geo.Point]int
+
+	sync.RWMutex
 }
 
 // Segment is a connection between 2 points
@@ -31,6 +31,12 @@ type Segment struct {
 	End     *geo.Point
 	Endid   int
 	Pipeid  int
+}
+
+// Pipe ..
+type Pipe struct {
+	ID     int
+	Points []geo.Point
 }
 
 // OpenFolder open folder of shapefiles
@@ -43,65 +49,33 @@ func (t *Tracker) OpenFolder(folder string, radius int) (err error) {
 	if err != nil {
 		return fmt.Errorf("Opening Folder Failed:, %s ", folder)
 	}
-	fmt.Println("Opened Folder: folder", folder)
+	fmt.Println("Opened Folder: ", folder)
 	for _, file := range files {
-		if !file.IsDir() && filepath.Ext(file.Name()) == ".shp" {
+		if !file.IsDir() {
 			path := filepath.Join(folder, file.Name())
 			fmt.Println("reading: ", file.Name())
-			t.Open(path)
+			switch filepath.Ext(file.Name()) {
 
+			case ".shp":
+				err = t.OpenShape(path)
+			case ".geojson", ".json":
+				err = t.OpenGeoJSON(path)
+
+			}
+			if err != nil {
+				err = fmt.Errorf("OpenFolder() %s", err)
+			}
 		}
-	}
 
+	}
 	return err
-}
-
-//Open Shape File
-func (t *Tracker) Open(file string) {
-	ps := len(t.Points)
-	ss := len(t.Segments)
-
-	fmt.Println("Reading File", file)
-
-	shape, err := shp.Open(file)
-	if err != nil {
-		fmt.Println(err)
-		return
-	}
-
-	for shape.Next() {
-		_, p := shape.Shape()
-
-		pl, _ := p.(*shp.PolyLine)
-		t.Pipes = append(t.Pipes, *pl)
-
-	}
-	shape.Close()
-	fmt.Println("Closed File")
-
-	t.PipeCount = len(t.Pipes)
-	fmt.Println("Generating Points and Segments")
-	t.generatePointsAndSegments()
-	fmt.Println("Points: ", len(t.Points)-ps)
-	fmt.Println("Segments: ", len(t.Segments)-ss)
-	fmt.Println("Creating Connection List")
-	t.createConnectionList()
-
-	/*for _, c := range t.Connections {
-		if len(c) > 1 {
-			fmt.Println(c)
-		}
-	}*/
 }
 
 // findExisting, given a point try to find existing points concurrently
 func (t *Tracker) findExisting(newpoint geo.Point, radius int) (exists bool, id int) {
 	numpoints := len(t.Points)
 
-	var NCPU int
-	NCPU = runtime.NumCPU()
-
-	found := make(chan int, 4)
+	found := make(chan int, maxproc)
 	quit := make(chan bool, 1)
 	var wg sync.WaitGroup
 
@@ -109,9 +83,10 @@ func (t *Tracker) findExisting(newpoint geo.Point, radius int) (exists bool, id 
 		wg.Add(1)
 		go findExistingRoutine(newpoint, t.Points, radius, 0, found, quit, 0, &wg)
 	} else {
-		for i := 0; i < NCPU; i++ {
-			start := i * numpoints / NCPU
-			end := (i + 1) * numpoints / NCPU
+
+		for i := 0; i < maxproc; i++ {
+			start := i * numpoints / maxproc
+			end := (i + 1) * numpoints / maxproc
 			wg.Add(1)
 			go findExistingRoutine(newpoint, t.Points[start:end], radius, start, found, quit, i, &wg)
 		}
@@ -168,55 +143,46 @@ func findExistingRoutine(newpoint geo.Point, points []geo.Point, radius int, off
 
 }
 
-func (t *Tracker) generatePointsAndSegments() {
-	start := time.Now()
-	pointtime := time.Second
+func (t *Tracker) addPipe(pipe Pipe) {
 	var frompointid int
 	var topointid int
-	for pipeid, pipe := range t.Pipes {
 
-		//for each pipe i.e PolyLine
-		found := false
-		var existingpointid int
-		end := pipe.NumPoints - 1
-		for n, point := range pipe.Points {
-			pointstart := time.Now()
-			//create new geo.Point
-			geopoint := geo.NewPoint(point.Y, point.X)
+	//for each pipe i.e PolyLine
+	found := false
+	var existingpointid int
+	end := len(pipe.Points) - 1
+	for n, point := range pipe.Points {
 
-			if n == 0 || n == int(end) {
-				found, existingpointid = t.findExisting(*geopoint, 0)
-			} else {
-				found, existingpointid = t.findExisting(*geopoint, 0)
-			}
-			if !found {
-				t.Points = append(t.Points, *geopoint)
-				topointid = len(t.Points) - 1
-			} else {
-				topointid = existingpointid
-			}
-
-			if n != 0 {
-				seg := new(Segment)
-				seg.Start = &t.Points[frompointid]
-				seg.Startid = frompointid
-				seg.End = &t.Points[topointid]
-				seg.Endid = topointid
-				seg.Pipeid = pipeid
-				t.Segments = append(t.Segments, *seg)
-			}
-
-			frompointid = topointid
-
-			if time.Since(pointstart) > pointtime {
-				fmt.Println(pointtime)
-				pointtime = pointtime * 10
-			}
+		if n == 0 || n == int(end) {
+			found, existingpointid = t.findExisting(point, 0)
+		} else {
+			found, existingpointid = t.findExisting(point, 0)
 		}
+		if !found {
+			//t.Lock()
+			t.Points = append(t.Points, point)
+			//t.Unlock()
+			topointid = len(t.Points) - 1
+		} else {
+			topointid = existingpointid
+		}
+
+		if n != 0 {
+			seg := new(Segment)
+			seg.Start = &t.Points[frompointid]
+			seg.Startid = frompointid
+			seg.End = &t.Points[topointid]
+			seg.Endid = topointid
+			seg.Pipeid = pipe.ID
+			t.Lock()
+			t.Segments = append(t.Segments, *seg)
+			t.Unlock()
+		}
+
+		frompointid = topointid
 
 	}
 
-	fmt.Println("Generation took: ", time.Since(start))
 }
 
 func (t *Tracker) createConnectionList() {
@@ -249,7 +215,7 @@ func (t *Tracker) createConnectionList() {
 }
 
 // FindPath return geo.Points of path nearest to input point
-func (t Tracker) FindPath(point int) (path []geo.Point, found bool) {
+func (t *Tracker) FindPath(point int) (path []geo.Point, found bool) {
 	found = false
 	path = append(path, t.Points[point])
 	for len(t.Connections[point]) > 0 {
@@ -261,7 +227,7 @@ func (t Tracker) FindPath(point int) (path []geo.Point, found bool) {
 }
 
 // PathToPoints convert path denoted for id numbers to geo.Point's
-func (t Tracker) IDsToPoints(path []int) (points []geo.Point) {
+func (t *Tracker) IDsToPoints(path []int) (points []geo.Point) {
 	for _, p := range path {
 		points = append(points, t.Points[p])
 	}
@@ -276,7 +242,7 @@ func SelectFromSliceByIndex(indexes []int, slice []int) (result []int) {
 }
 
 // FindPathID returns point id of path nearest to input point
-func (t Tracker) FindPathID(start int) (morepath []int) {
+func (t *Tracker) FindPathID(start int) (morepath []int) {
 	fmt.Println("in FindPathID")
 	fmt.Println("start = ", start)
 	fmt.Println(len(t.Connections[start]))
@@ -288,7 +254,7 @@ func (t Tracker) FindPathID(start int) (morepath []int) {
 	return
 }
 
-func (t Tracker) FindPathIDRecursive(path []int, recurse int, joins int) (biggerpath []int, found bool) {
+func (t *Tracker) FindPathIDRecursive(path []int, recurse int, joins int) (biggerpath []int, found bool) {
 	fmt.Println("Recursion: ", recurse)
 	if recurse == 15 {
 		fmt.Println("recursion limit")
@@ -300,7 +266,7 @@ func (t Tracker) FindPathIDRecursive(path []int, recurse int, joins int) (bigger
 	fmt.Println("End: ", end)
 
 	endgeo := t.Points[end]
-	ids := FindAllStartPointsWithin(&endgeo, t.Points, float64(t.JoinRadius)/1000.0, &t) // find all start points within the join radius of the end of the path
+	ids := FindAllStartPointsWithin(&endgeo, t.Points, float64(t.JoinRadius)/1000.0, t) // find all start points within the join radius of the end of the path
 	fmt.Println("Start points near end\n", ids)
 	ids = findPointsIDSNotIn(ids, path)
 	fmt.Println("Start points near end not already in the path\n", ids)
@@ -398,7 +364,7 @@ func findPointsIDSNotIn(set []int, subtract []int) (ids []int) {
 }
 
 // PathToGeoJSON ..
-func (t Tracker) PathToGeoJSON(path []geo.Point) (string, error) {
+func (t *Tracker) PathToGeoJSON(path []geo.Point) (string, error) {
 	fc := new(gj.FeatureCollection)
 	// Start marker
 	var p *gj.Feature

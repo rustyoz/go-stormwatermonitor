@@ -53,8 +53,8 @@ const header = `
 <meta></meta>
 <script src="https://ajax.googleapis.com/ajax/libs/jquery/2.1.3/jquery.min.js"></script>
 <script src="http://maps.googleapis.com/maps/api/js"></script>
-<link href="/static/css/bootstrap.min.css" rel="stylesheet">
-<link href="/static/css/style.css" rel="stylesheet">
+<link href="{{.BaseUrl}}/static/css/bootstrap.min.css" rel="stylesheet">
+<link href="{{.BaseUrl}}/static/css/style.css" rel="stylesheet">
 
 <!--Deakin Lng -38.144061, Lat 144.360345-->
 `
