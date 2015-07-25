@@ -20,9 +20,9 @@ type Tracker struct {
 	JoinRadius  int
 
 	PointMap map[geo.Point]int
-
-	sync.RWMutex
 }
+
+var trackermutex sync.RWMutex
 
 // Segment is a connection between 2 points
 type Segment struct {
@@ -159,9 +159,9 @@ func (t *Tracker) addPipe(pipe Pipe) {
 			found, existingpointid = t.findExisting(point, 0)
 		}
 		if !found {
-			//t.Lock()
+			trackermutex.Lock()
 			t.Points = append(t.Points, point)
-			//t.Unlock()
+			trackermutex.Unlock()
 			topointid = len(t.Points) - 1
 		} else {
 			topointid = existingpointid
@@ -174,9 +174,9 @@ func (t *Tracker) addPipe(pipe Pipe) {
 			seg.End = &t.Points[topointid]
 			seg.Endid = topointid
 			seg.Pipeid = pipe.ID
-			t.Lock()
+			trackermutex.Lock()
 			t.Segments = append(t.Segments, *seg)
-			t.Unlock()
+			trackermutex.Unlock()
 		}
 
 		frompointid = topointid

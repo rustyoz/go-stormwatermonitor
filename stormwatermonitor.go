@@ -27,6 +27,7 @@ var radius int
 var data string
 var console bool
 var maxproc int
+var port int
 
 var siteConfig SiteConfig
 
@@ -38,6 +39,7 @@ func init() {
 	flag.BoolVar(&console, "console", false, "enable console")
 	flag.IntVar(&maxproc, "maxproc", runtime.NumCPU(), "set maximum processors")
 	flag.StringVar(&siteConfig.BaseUrl, "baseurl", "", "Set base url of server")
+	flag.IntVar(&port, "port", 9000, "port to bind too")
 }
 
 func main() {
@@ -102,17 +104,18 @@ func main() {
 	http.Handle("/", mux)
 
 	//fmt.Println(t.FindPathID(0))
-	fmt.Println(`http.ListenAndServe(":8000", nil)`)
 
 	if console {
 		fmt.Println("Console Enabled")
 		go Console()
 	}
-
+	addr := ":" + strconv.Itoa(port)
 	if logging {
-		log.Fatal(http.ListenAndServe(":8000", LogRequest(http.DefaultServeMux)))
+		fmt.Println("Listening and Logging on " + addr)
+		log.Fatal(http.ListenAndServe(addr, LogRequest(http.DefaultServeMux)))
 	} else {
-		http.ListenAndServe(":8000", nil)
+		fmt.Println("Listening on " + addr)
+		http.ListenAndServe(addr, nil)
 	}
 
 }
